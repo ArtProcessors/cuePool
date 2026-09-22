@@ -12,7 +12,7 @@ checkout. Install Rust through [rustup](https://rustup.rs/), then clone the
 repository:
 
 ```sh
-git clone https://github.com/BlueJayLouche/cuePool.git
+git clone https://github.com/kovvbojAV/cuePool.git
 cd cuePool
 ```
 
@@ -79,8 +79,8 @@ From the repository root:
 cargo run --release --locked -p cuepool
 ```
 
-To include Windows ASIO support, add `--features asio`. Release builds use
-`--all-features`. See [command-line options](guide/src/getting-started.md#command-line-options)
+Windows release builds include ASIO support with `--features asio`.
+See [command-line options](guide/src/getting-started.md#command-line-options)
 for opening a project at startup and [packaging](packaging/README.md) for app
 bundles and distributable builds.
 

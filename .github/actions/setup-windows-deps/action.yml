@@ -1,5 +1,5 @@
 name: Set up Windows dependencies
-description: Install the FFmpeg SDK and static pthreads used by CuePool builds and tests.
+description: Install the FFmpeg/ASIO SDKs and static pthreads used by CuePool builds and tests.
 runs:
   using: composite
   steps:
@@ -8,15 +8,42 @@ runs:
       run: |
         # Keep the SDK and runtime DLLs on FFmpeg 8.0: the D3D12VA layout
         # guard rejects the ABI rework in 8.1.2+.
-        curl.exe --fail -L -o "$env:RUNNER_TEMP\ffmpeg.zip" "https://github.com/GyanD/codexffmpeg/releases/download/8.0/ffmpeg-8.0-full_build-shared.zip"
+        $deps = Get-Content "packaging/windows-dependencies.json" -Raw | ConvertFrom-Json
+        curl.exe --fail -L -o "$env:RUNNER_TEMP\ffmpeg.zip" $deps.ffmpeg.binary.url
         if ($LASTEXITCODE -ne 0) { throw "FFmpeg SDK download failed" }
-        $expected = "d2bfb598ec5d8d69c86cb198decc829fefb2c0acaa7ddd27ab5348139cce3dea"
+        $expected = $deps.ffmpeg.binary.sha256
         $actual = (Get-FileHash "$env:RUNNER_TEMP\ffmpeg.zip" -Algorithm SHA256).Hash.ToLower()
         if ($actual -ne $expected) { throw "ffmpeg-8.0 SDK digest mismatch: $actual" }
         Expand-Archive "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
         $dir = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1
         "FFMPEG_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
         "$($dir.FullName)\bin" >> $env:GITHUB_PATH
+
+        # Both bindgen output and the C++ D3D12 layout guard depend on this SDK.
+        cargo clean --package ffmpeg-sys-next --package cuepool-video --release
+        if ($LASTEXITCODE -ne 0) { throw "Could not clear cached FFmpeg build outputs" }
+
+    - name: Install pinned ASIO SDK
+      shell: pwsh
+      run: |
+        # asio-sys otherwise downloads the moving steinberg.net/asiosdk alias.
+        $deps = Get-Content "packaging/windows-dependencies.json" -Raw | ConvertFrom-Json
+        curl.exe --fail -L -o "$env:RUNNER_TEMP\asio.zip" $deps.asio.url
+        if ($LASTEXITCODE -ne 0) { throw "ASIO SDK download failed" }
+        $expected = $deps.asio.sha256
+        $actual = (Get-FileHash "$env:RUNNER_TEMP\asio.zip" -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected) { throw "ASIO 2.3.4 SDK digest mismatch: $actual" }
+        Expand-Archive "$env:RUNNER_TEMP\asio.zip" -DestinationPath "$env:RUNNER_TEMP\asio"
+        $dir = "$env:RUNNER_TEMP\asio\ASIOSDK"
+        if (!(Test-Path "$dir\common\asio.h" -PathType Leaf) -or !(Test-Path "$dir\host\asiodrivers.h" -PathType Leaf)) {
+          throw "ASIO SDK is missing required headers"
+        }
+        "CPAL_ASIO_DIR=$dir" >> $env:GITHUB_ENV
+
+        # asio-sys reuses existing generated bindings/libasio.a even when the
+        # SDK path changes. Cached outputs must not bypass the pinned SDK.
+        cargo clean --package asio-sys --release
+        if ($LASTEXITCODE -ne 0) { throw "Could not clear cached ASIO build outputs" }
 
     - name: Install pthreads for AprilTag
       shell: pwsh

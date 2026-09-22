@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.12.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/BlueJayLouche/cuePool"
+repository = "https://github.com/kovvbojAV/cuePool"
 rust-version = "1.97"
 
 [workspace.dependencies]
@@ -55,7 +55,7 @@ midir = "0.11"
 
 # Threading / Sync
 crossbeam = "0.8"
-ringbuf = "0.4"
+ringbuf = "0.5.2"
 
 # Utils
 bitflags = "2.9"

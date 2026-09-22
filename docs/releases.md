@@ -1,5 +1,8 @@
 # Preparing and publishing CuePool
 
+The canonical source and release repository is
+[`kovvbojAV/cuePool`](https://github.com/kovvbojAV/cuePool).
+
 CuePool has one product version in `[workspace.package]`, inherited by every
 internal crate, one `CHANGELOG.md`, and product tags named `vX.Y.Z`. Release-plz
 0.3.162 prepares changes entirely from Git; registry publication is disabled in
@@ -94,7 +97,12 @@ A read-only prerequisite gate runs even on artifacts-only rehearsals and failed
 builds. The final publication job requires that gate to pass, including successful
 verification and both platform jobs. It also requires exactly one nonempty DMG, portable ZIP and MSI, validates
 their basic container structure, and checks the ZIP contains the executable and
-runtime DLLs. macOS packaging verifies the DMG and application signature.
+runtime DLLs. The Windows job additionally runs the portable executable with a
+clean runtime path and exercises MSI installation, upgrade, uninstall and rollback
+on its disposable hosted runner. Profile/project preservation and installed
+payload hashes are checked; logs are retained as `windows-package-validation`.
+Windows builds explicitly enable ASIO; production packages omit the test harness.
+macOS packaging verifies the DMG and application signature.
 
 The publication script creates or reuses a **draft**, writes the exact changelog
 notes and source attestation (rejecting conflicting source claims), uploads the packages and
@@ -137,12 +145,14 @@ No custom GitHub App, private key, personal access token or crates.io token is n
 The job requests Contents and Pull requests write permissions; other jobs keep
 their existing permissions.
 
-The repository owner must enable **Settings → Actions → General → Workflow
-permissions → Allow GitHub Actions to create and approve pull requests** if it is
-not already enabled. The workflow declares its required write permissions, so
+For automated release PRs, the repository owner must enable **Settings → Actions
+→ General → Workflow permissions → Allow GitHub Actions to create and approve
+pull requests** if the organisation policy permits it. The workflow declares its
+required write permissions, so
 there is no need to change the default token permission for all workflows.
 After setup, run **Actions → Release preparation → Run workflow** on `main` to
-create or refresh the proposal. If GitHub refuses PR creation, check that setting.
+create or refresh the proposal. If GitHub refuses PR creation and the organisation
+policy prevents enabling the setting, use the maintainer procedure below.
 Despite the setting's name, this workflow never approves or merges its own PR.
 
 GitHub puts CI runs for PRs created or updated with `GITHUB_TOKEN` into an
@@ -152,6 +162,42 @@ After the bot updates a release PR, approve the checks for its latest revision.
 Wait for those checks, review the version/changelog and update minor-release welcome
 copy before squash merging. Do not interpret pending or approval-required checks
 as a pass. See [GitHub's token event rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+
+### Maintainer release PR when bot PRs are disabled
+
+The current organisation policy prevents GitHub Actions from creating PRs. A
+maintainer can prepare the same proposal locally and open a normal PR using their
+existing GitHub login. No policy change or additional repository secret is needed.
+While that policy applies, disable only the **Release preparation** workflow in
+Actions to avoid repeated bot-PR failures. Keep **CI** and **Release** enabled:
+publication and receipt recovery do not depend on release preparation. Re-enable
+the preparation workflow if automated PRs become permitted.
+Install the pinned `release-plz 0.3.162`, then start from a clean checkout:
+
+```sh
+git fetch origin main --tags
+git switch --create release/cuepool-next origin/main
+python3 .github/scripts/release.py can-prepare
+python3 scripts/prepare-release.py update
+git diff -- Cargo.toml Cargo.lock CHANGELOG.md
+```
+
+Continue only if `can-prepare` reports `ready=true`. The wrapper enforces the same
+Git baseline, version and dependency checks used by automation, but `update` makes
+no remote changes. Review the proposed version and changelog. For a minor bump,
+update the welcome copy and `RELEASE_NOTES_VERSION` before running the checks in
+AGENTS.md. Commit the proposal, push the branch, and open a PR against `main` in
+`kovvbojAV/cuePool`. Use a title such as `chore: release CuePool 0.13.0` with the
+actual proposed version. Existing GitHub CLI authentication is sufficient for
+`gh pr create --repo kovvbojAV/cuePool`; do not pass it to release-plz or create a
+long-lived workflow credential.
+
+CI on a maintainer-created PR runs through the normal pull-request event. Review
+and merge it after all required checks pass. The main push then starts the same
+verified publication workflow described above. A green Release run that reports
+`active=false` means the workspace still names an older existing tag; it is not
+evidence that new installers were built. Do not move that tag or reuse its version
+for changed source.
 
 Publication uses the job-scoped GITHUB_TOKEN with Contents write. The verification
 and packaging jobs continue in the **same release workflow** after it creates a
@@ -181,3 +227,25 @@ A passing Linux suite does not prove Windows or macOS packaging. If the Windows
 AprilTag build still lacks pthread.h, its build job must fail and publication must
 remain blocked. Resolve that platform prerequisite through its own reviewed change;
 do not remove Windows from the release gate.
+
+## Windows dependency sources
+
+Windows builds use the BtbN FFmpeg 8.0-branch shared SDK pinned in
+`packaging/windows-dependencies.json`. Keep headers and DLLs together: CuePool's
+D3D12VA layout guard relies on this ABI. The dependency setup clears cached
+FFmpeg bindings and the video crate's C++ layout probe when restoring Cargo
+builds. Packaging checks all seven DLL hashes against the pin.
+
+`cuepool-windows-sources.zip` is required for publication alongside the MSI,
+portable ZIP and macOS DMG. The workflow creates it from the exact CuePool
+checkout, verified upstream FFmpeg/ASIO archives, the matching BtbN build-script
+snapshot, Cargo source indexes, and the actual vcpkg pthreads port. The release
+checks its member hashes and CuePool commit, then includes it in `SHA256SUMS`
+and the same remote readback check as the binaries. An artifacts-only rehearsal
+produces it too. See [source access](../packaging/windows-sources.md).
+
+When changing the FFmpeg pin, update the binary, seven DLL hashes, corresponding
+FFmpeg source and BtbN build-script snapshots together. Verify the SDK's D3D12VA
+layout, Windows loader and media playback before promotion. Preserve the source
+asset as long as its binary release is offered; upstream BtbN monthly assets
+have a two-year retention policy.
