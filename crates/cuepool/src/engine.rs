@@ -412,21 +412,7 @@ impl ShowEngine {
                 log::warn!("Selected cue Q{qid} not found in cue list");
                 return;
             };
-            let mut cues = Vec::new();
-            for (offset, cue) in state.show_file.cues[index..].iter().enumerate() {
-                if !cue.enabled() {
-                    if offset == 0 {
-                        break;
-                    }
-                    continue;
-                }
-                if offset == 0 || cue.base().trigger == TriggerMode::WithLast {
-                    cues.push(cue.clone());
-                } else {
-                    break;
-                }
-            }
-            (index, cues)
+            (index, with_last_run(&state.show_file.cues, index))
         };
 
         self.go_in_progress = true;
@@ -448,19 +434,22 @@ impl ShowEngine {
         }
     }
 
+    /// A cue fired by its own trigger starts with its WithLast cues, as GO
+    /// would, but leaves the standby cue and the show clock alone.
     fn fire(&mut self, qid: Decimal) {
-        let cue = self
-            .state
-            .lock_unpoisoned()
-            .show_file
-            .cues
-            .iter()
-            .find(|cue| cue.base().qid == qid)
-            .cloned();
-        if let Some(cue) = cue {
-            self.play_cue(cue);
-        } else {
+        let cues = {
+            let state = self.state.lock_unpoisoned();
+            let cues = &state.show_file.cues;
+            cues.iter()
+                .position(|cue| cue.base().qid == qid)
+                .map(|index| with_last_run(cues, index))
+        };
+        let Some(cues) = cues else {
             log::warn!("Trigger referenced unknown cue Q{qid}");
+            return;
+        };
+        for cue in cues {
+            self.play_cue(cue);
         }
     }
 
@@ -1668,6 +1657,26 @@ fn tail_fade_seek_action(
     }
 }
 
+/// The cue at `index` and the WithLast cues that start with it. Disabled
+/// followers are skipped; a disabled cue at `index` starts nothing.
+fn with_last_run(cues: &[Cue], index: usize) -> Vec<Cue> {
+    let mut run = Vec::new();
+    for (offset, cue) in cues[index..].iter().enumerate() {
+        if !cue.enabled() {
+            if offset == 0 {
+                break;
+            }
+            continue;
+        }
+        if offset == 0 || cue.base().trigger == TriggerMode::WithLast {
+            run.push(cue.clone());
+        } else {
+            break;
+        }
+    }
+    run
+}
+
 fn next_standby_qid(cues: &[Cue], start_idx: usize) -> Option<Decimal> {
     let mut index = start_idx + 1;
     if matches!(cues.get(start_idx), Some(Cue::Group { .. })) {
@@ -2069,6 +2078,39 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(started, vec![Decimal::ONE, Decimal::TWO]);
+    }
+
+    /// A timecode, hotkey, MIDI or wall-clock trigger fires its cue through
+    /// `Fire`. The cue's WithLast followers start with it and its AfterLast
+    /// chain follows, as under GO, while standby and the show clock stay put.
+    #[test]
+    fn fire_starts_the_with_last_run_without_moving_standby() {
+        use TriggerMode::{AfterLast, Go, WithLast};
+        let app = cuepool_gui::CuePoolApp::new();
+        {
+            let mut state = app.state().lock_unpoisoned();
+            state.selected_cue_id = Some(Decimal::from(5));
+            state.show_file.cues = vec![
+                dummy(1, Go),
+                dummy(2, WithLast),
+                dummy(3, WithLast),
+                dummy(4, AfterLast),
+                dummy(5, Go),
+                dummy(6, WithLast),
+            ];
+        }
+        let mut engine = ShowEngine::new(app.state().clone(), None);
+        let started = engine
+            .command(EngineCommand::Fire(Decimal::ONE), Duration::ZERO)
+            .into_iter()
+            .filter_map(|action| match action {
+                EngineAction::Trace(EngineTrace::CueStarted { qid, .. }) => Some(qid),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(started, [1, 2, 3, 4].map(Decimal::from));
+        assert_eq!(engine.snapshot().standby_qid, Some(Decimal::from(5)));
+        assert_eq!(engine.show_elapsed(), None);
     }
 
     /// A gallery show's opening cue: Q1 RESET (stop-all) with the feature

@@ -144,6 +144,10 @@ to the GO chain:
   show clock display; a bare number is plain seconds). A capture button
   stamps the trigger with the current show time.
 
+A triggered cue starts its **WithLast** cues with it and its **AfterLast**
+cues follow, the same chain GO would play; the standby cue does not move.
+Leave triggers off the WithLast cues themselves, or they can fire twice.
+
 ## MIDI Show Control (MSC)
 
 *Project Settings → MSC* enables MSC over the network (default ports 6004,

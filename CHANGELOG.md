@@ -5,6 +5,10 @@ publications are recorded separately by annotated published/vX.Y.Z Git tags.
 
 ## [Unreleased]
 
+### Application fixes
+
+- Start a cue's WithLast cues when its timecode, hotkey, MIDI or wall-clock trigger fires it, as GO does ([#45](https://github.com/kovvbojAV/cuePool/issues/45)). A WithLast cue that also carries its own trigger can now fire twice; remove that trigger.
+
 ## [0.13.2] - 2026-09-22
 
 ### Packaging fixes
