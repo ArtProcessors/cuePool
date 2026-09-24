@@ -147,10 +147,11 @@ No custom GitHub App, private key, personal access token or crates.io token is n
 The job requests Contents and Pull requests write permissions; other jobs keep
 their existing permissions.
 
-For automated release PRs, the repository owner must enable **Settings → Actions
-→ General → Workflow permissions → Allow GitHub Actions to create and approve
-pull requests** if the organisation policy permits it. The workflow declares its
-required write permissions, so
+Automated release PRs need **Allow GitHub Actions to create and approve pull
+requests** enabled under **Settings → Actions → General → Workflow permissions**,
+first for the kovvbojAV organisation and then for this repository. Both are
+enabled, with the default token permission left read-only. The workflow declares
+its required write permissions, so
 there is no need to change the default token permission for all workflows.
 After setup, run **Actions → Release preparation → Run workflow** on `main` to
 create or refresh the proposal. If GitHub refuses PR creation and the organisation
@@ -167,13 +168,13 @@ as a pass. See [GitHub's token event rules](https://docs.github.com/en/actions/h
 
 ### Maintainer release PR when bot PRs are disabled
 
-The current organisation policy prevents GitHub Actions from creating PRs. A
-maintainer can prepare the same proposal locally and open a normal PR using their
-existing GitHub login. No policy change or additional repository secret is needed.
-While that policy applies, disable only the **Release preparation** workflow in
-Actions to avoid repeated bot-PR failures. Keep **CI** and **Release** enabled:
-publication and receipt recovery do not depend on release preparation. Re-enable
-the preparation workflow if automated PRs become permitted.
+If either setting is turned off, GitHub refuses the bot's PR with a 403. A
+maintainer can then prepare the same proposal locally and open a normal PR using
+their existing GitHub login. No policy change or additional repository secret is
+needed. While bot PRs are refused, disable only the **Release preparation**
+workflow in Actions to avoid repeated bot-PR failures. Keep **CI** and **Release**
+enabled: publication and receipt recovery do not depend on release preparation.
+Re-enable the preparation workflow once automated PRs are permitted again.
 Install the pinned `release-plz 0.3.169`, then start from a clean checkout:
 
 ```sh
